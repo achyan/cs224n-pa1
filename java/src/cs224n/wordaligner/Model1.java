@@ -1,26 +1,19 @@
 package cs224n.wordaligner;
 
 import cs224n.util.*;
+import java.lang.Math;
 import java.util.*;
 
 public class Model1 implements WordAligner {
 
-	private CounterMap<String, String> sourceTargetCounter;
-    private Counter<String> sourceCounter;
-    //private Counter<String> targetCounter;	
-	
-    private Map<String, List<Double>> sourceTargetProb;
-    private Set<String> sourceVocab;
-    private Set<String> targetVocab;
+	private CounterMap<String, String> efCounter;
+    private Counter<String> eCounter;
+    private CounterMap<String, String> feProb;
+    
+    private final double THRESHOLD = 0.05; 
     
 	public Model1() {
-		sourceTargetCounter = new CounterMap<String,String>();
-    	sourceCounter = new Counter<String>();
-    	//targetCounter = new Counter<String>();
-    	
-    	sourceVocab = new HashSet<String>();
-    	targetVocab = new HashSet<String>();
-    	sourceTargetProb = new HashMap<String, List<Double>>();
+    	feProb = new CounterMap<String,String>();
 	}
 	
 	public Alignment align(SentencePair sentencePair) {
@@ -28,29 +21,30 @@ public class Model1 implements WordAligner {
 		
 		List<String> sourceSentence = sentencePair.getSourceWords();
 		List<String> targetSentence = sentencePair.getTargetWords();
-		sourceSentence.add(0, NULL_WORD);
-
+		
 		double prob = 0;
 		double maxProb = 0;
 		int maxIndex = 0;
-		int targetIndex = 1;
+		int targetIndex = 0;
 		int sourceIndex = 0;
 
 		for(String target : targetSentence) {
 			maxIndex = 0;
 			maxProb = 0;
 			for (String source : sourceSentence) {
-				prob = sourceTargetProb.getCount(source, target);
+				prob = feProb.getCount(source, target);
 				if (prob > maxProb) {
 					maxProb = prob;
 					maxIndex = sourceIndex;
 				}
 				sourceIndex++;
 			}
-			alignment.addPredictedAlignment(targetIndex, maxIndex);
+			if (maxIndex != 0)
+				alignment.addPredictedAlignment(targetIndex, maxIndex-1);
 			targetIndex++;
 			sourceIndex = 0;
 		}
+		
 		return alignment;
 	}
 
@@ -58,49 +52,51 @@ public class Model1 implements WordAligner {
 	
 		// Initialize uniform probabilities
 		for (SentencePair pair : trainingData) {
-			List<String> targetWords = pair.getTargetWords();
-			List<String> sourceWords = pair.getSourceWords();
+			List<String> eWords = pair.getTargetWords();
+			List<String> fWords = pair.getSourceWords();
+			fWords.add(0,NULL_WORD);
 			
-			for (String word : targetWords) {
-				targetVocab.add(word);
-			}
-			
-			for (String word : sourceWords) {
-				sourceVocab.add(word);
+			for (String f : fWords) {
+				for (String e : eWords) {
+					feProb.setCount(f,e,0.2);
+				}
 			}
 		}
-		
-		for (String source : sourceVocab) {
-			sourceTargetProb.setCount(source,target,1.0/sourceVocab.size());
-		}
-				
-		//sourceVocab.add(NULL_WORD);
-		
-		// English = SOURCE	; French = TARGET
-		
 		double delta = 0;
+		double likelihood = 0;
+		double oldlikelihood = 0;
+		boolean converge = false;
 		double sum = 0;
 		
-		for (SentencePair pair : trainingData) { // For k = 1 ... n
-			List<String> targetWords = pair.getTargetWords();
-		    List<String> sourceWords = pair.getSourceWords();
-		
-		    for (String target : targetWords) { // For i = 1 ... mk
-		    	
-		    	sum = 0;
-		    	
-		    	for (String source : sourceWords) {
-		    		sum+=sourceTargetProb.getCount(source,target);
-		    	}
-		    	
-		    	for (String source : sourceWords) { // For j = 0 ... lk
-		    		delta = sourceTargetProb.getCount(source,target)/sum;
-		    		sourceCounter.incrementCount(source, delta);
-		    		sourceTargetCounter.incrementCount(source, target, delta);
-		    	  	sourceTargetProb.setCount(source, target, 
-		    	  			((double)sourceTargetCounter.getCount(source,target)/sourceCounter.getCount(source)));
-		    	}
+		while (!converge) {
+			oldlikelihood = likelihood;
+			likelihood = 0;
+			
+			efCounter = new CounterMap<String,String>();
+			eCounter = new Counter<String>();
+			
+			for (SentencePair pair : trainingData) { // For k = 1 ... n
+				List<String> eWords = pair.getTargetWords();
+			    List<String> fWords = pair.getSourceWords();
+			    
+			    for (String f : fWords) { // For i = 1 ... mk			    	
+			    	sum = 0;
+			    	for (String e : eWords) {
+			    		sum+=feProb.getCount(f,e);
+			    	}
+			    	for (String e : eWords) { // For j = 0 ... lk
+			    		delta = feProb.getCount(f,e)/sum;
+			    		eCounter.incrementCount(e, delta);
+			    		efCounter.incrementCount(e,f, delta);
+			    		feProb.setCount(f,e,((double)efCounter.getCount(e,f)/eCounter.getCount(e)));
+			    	  	likelihood+=feProb.getCount(f,e);
+			    	}
+				}
 			}
+			
+			//System.out.println(Math.abs(oldlikelihood-likelihood));
+			if (Math.abs(oldlikelihood-likelihood) < THRESHOLD)
+				converge = true;
 		}
 	}
 }
