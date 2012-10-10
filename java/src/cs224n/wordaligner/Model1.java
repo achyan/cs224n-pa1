@@ -27,7 +27,7 @@ public class Model1 implements WordAligner {
 		double prob = 0;
 		double maxProb = 0;
 		int maxIndex = 0;
-		int targetIndex = 0;
+		int targetIndex = 1;
 		int sourceIndex = 0;
 
 		for(String target : targetSentence) {
@@ -42,7 +42,7 @@ public class Model1 implements WordAligner {
 				sourceIndex++;
 			}
 			if (maxIndex != 0)
-				alignment.addPredictedAlignment(targetIndex, maxIndex-1);
+				alignment.addPredictedAlignment(targetIndex-1, maxIndex-1);
 			targetIndex++;
 			sourceIndex = 0;
 		}
@@ -92,6 +92,8 @@ public class Model1 implements WordAligner {
 			    		delta = feProb.getCount(f,e)/sum;
 			    		eCounter.incrementCount(e, delta);
 			    		efCounter.incrementCount(e,f, delta);
+//			    		feProb.setCount(f,e,((double)efCounter.getCount(e,f)/eCounter.getCount(e)));
+//			    		likelihood+=feProb.getCount(f,e);
 			    	}
 				}
 			}
