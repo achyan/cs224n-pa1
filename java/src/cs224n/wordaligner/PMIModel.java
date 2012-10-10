@@ -27,12 +27,12 @@ public class PMIModel implements WordAligner {
 		
 		List<String> sourceSentence = sentencePair.getSourceWords();
 		List<String> targetSentence = sentencePair.getTargetWords();
-		sourceSentence.add(0, NULL_WORD);
+		//sourceSentence.add(0, NULL_WORD);
 
 		double pmi = 0;
 		double maxPmi = 0;
 		int maxIndex = 0;
-		int targetIndex = 1;
+		int targetIndex = 0;
 		int sourceIndex = 0;
 
 		for(String targetWord : targetSentence) {
@@ -49,8 +49,9 @@ public class PMIModel implements WordAligner {
 				sourceIndex++;
 				
 			}
-			
-			alignment.addPredictedAlignment(targetIndex, maxIndex);
+			if (!sourceSentence.get(maxIndex).equals(NULL_WORD)) {
+				alignment.addPredictedAlignment(targetIndex, maxIndex); //0 is <NULL>, which shifts everything down one
+			}
 			targetIndex++;
 			sourceIndex = 0;
 		}

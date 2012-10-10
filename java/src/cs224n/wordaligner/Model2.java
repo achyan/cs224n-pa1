@@ -18,10 +18,9 @@ public class Model2 implements WordAligner {
 	public Alignment align(SentencePair sentencePair) {
 		Alignment alignment = new Alignment();
 		
-		List<String> sourceSentence = sentencePair.getSourceWords();
-		sourceSentence.add(0,NULL_WORD);
+		List<String> sourceSentence = sentencePair.getSourceWords(); //sourceSentence already has the null added during training
 		List<String> targetSentence = sentencePair.getTargetWords();
-		int m_k = sourceSentence.size();
+		int m_k = sourceSentence.size() - 1;  //don't count null
 		int l_k = targetSentence.size();
 
 		double prob = 0;
@@ -34,8 +33,8 @@ public class Model2 implements WordAligner {
 			maxIndex = 0;
 			maxProb = 0;
 			for (String source : sourceSentence) {
-				prob = ((double) jGivenIlmCounts.getCount(new Pair<Integer,Integer>(sourceIndex,targetIndex), new Pair<Integer,Integer>(l_k,m_k))) 
-						/ ilmCounts.getCount(new Pair<Integer,Pair<Integer,Integer>>(targetIndex,new Pair<Integer,Integer>(l_k,m_k)))
+				prob = ((double) jGivenIlmCounts.getCount(new Pair<Integer,Integer>(targetIndex,sourceIndex), new Pair<Integer,Integer>(l_k,m_k))) 
+						/ ilmCounts.getCount(new Pair<Integer,Pair<Integer,Integer>>(sourceIndex,new Pair<Integer,Integer>(l_k,m_k)))
 						* eAndFCounts.getCount(target, source)
 						/ eCounts.getCount(target);
 				if (prob > maxProb) {
@@ -44,7 +43,10 @@ public class Model2 implements WordAligner {
 				}
 				sourceIndex++;
 			}
-			alignment.addPredictedAlignment(targetIndex, maxIndex);
+			if (maxIndex != 0) {
+				alignment.addPredictedAlignment(targetIndex-1, maxIndex-1); //0 is <NULL>, which shifts everything down one; targetIndex was originally 1-indexed
+			}
+			
 			targetIndex++;
 			sourceIndex = 0;
 		}
@@ -56,10 +58,15 @@ public class Model2 implements WordAligner {
 	@Override
 	public void train(List<SentencePair> trainingData) {
 		//int k = trainingData.size();
-		int i = 1;
-		int j = 0;
+		int sourceIndex, targetIndex;
 		double delta;
 		boolean initIter = true;
+		
+		//preprocess
+		for (SentencePair sentencePair: trainingData) {
+			List<String> sourceWords = sentencePair.getSourceWords();
+			sourceWords.add(0,NULL_WORD);
+		}
 		
 		//initialize to results of Model1
 		CounterMap<String, String> prevEAndFCounts = null;
@@ -73,17 +80,13 @@ public class Model2 implements WordAligner {
 			jGivenIlmCounts = new CounterMap<Pair<Integer, Integer>, Pair<Integer, Integer>>();
 			ilmCounts = new Counter<Pair<Integer, Pair<Integer, Integer>>>();
 			
-	
-			
-			
 			for (SentencePair sentencePair: trainingData) { //for all k
 				List<String> sourceWords = sentencePair.getSourceWords();
-				sourceWords.add(0,NULL_WORD);
 				List<String> targetWords = sentencePair.getTargetWords();
-				int m_k = sourceWords.size();
+				int m_k = sourceWords.size() - 1 ; //null not counted in size
 				int l_k = targetWords.size();
 				
-				i = 1;
+				sourceIndex = 0;
 				
 				for (String sourceWord : sourceWords) {
 					
@@ -91,30 +94,30 @@ public class Model2 implements WordAligner {
 					double qt = 0;
 					
 					//sum up all the qt values to get normalization factor
-					j = 0; //TODO: why target has null? shouldn't source have null?
+					targetIndex = 1; //TODO: why target has null? shouldn't source have null?
 					for(String targetWord : targetWords) {
 						if (prevJGivenIlmCounts == null) {
 							qt = 1;
 						}
 						else {
-							qt = ((double) prevJGivenIlmCounts.getCount(new Pair<Integer,Integer>(j,i), new Pair<Integer,Integer>(l_k,m_k))) 
-									/ prevIlmCounts.getCount(new Pair<Integer,Pair<Integer,Integer>>(i,new Pair<Integer,Integer>(l_k,m_k)))
+							qt = ((double) prevJGivenIlmCounts.getCount(new Pair<Integer,Integer>(targetIndex,sourceIndex), new Pair<Integer,Integer>(l_k,m_k))) 
+									/ prevIlmCounts.getCount(new Pair<Integer,Pair<Integer,Integer>>(sourceIndex,new Pair<Integer,Integer>(l_k,m_k)))
 									* prevEAndFCounts.getCount(targetWord, sourceWord)
 									/ prevECounts.getCount(targetWord);
 						}
 											
 						normalizer += qt;
-						j++;
+						targetIndex++;
 					}
 					
-					j = 0; //TODO: why target has null? shouldn't source have null?
+					targetIndex = 1; //TODO: why target has null? shouldn't source have null?
 					for(String targetWord : targetWords) {
 						if (prevJGivenIlmCounts == null) {
 							qt = 1;
 						}
 						else {
-							qt = ((double) prevJGivenIlmCounts.getCount(new Pair<Integer,Integer>(j,i), new Pair<Integer,Integer>(l_k,m_k))) 
-									/ prevIlmCounts.getCount(new Pair<Integer,Pair<Integer,Integer>>(i,new Pair<Integer,Integer>(l_k,m_k)))
+							qt = ((double) prevJGivenIlmCounts.getCount(new Pair<Integer,Integer>(targetIndex,sourceIndex), new Pair<Integer,Integer>(l_k,m_k))) 
+									/ prevIlmCounts.getCount(new Pair<Integer,Pair<Integer,Integer>>(sourceIndex,new Pair<Integer,Integer>(l_k,m_k)))
 									* prevEAndFCounts.getCount(targetWord, sourceWord)
 									/ prevECounts.getCount(targetWord);
 						}
@@ -122,17 +125,17 @@ public class Model2 implements WordAligner {
 						delta = qt/normalizer;
 						
 						eAndFCounts.incrementCount(targetWord, sourceWord, delta);
-						eCounts.incrementCount(targetWord, delta); //TODO: why is this in inner for loop
-						jGivenIlmCounts.incrementCount(new Pair<Integer,Integer>(j,i),
+						eCounts.incrementCount(targetWord, delta);  //normalization purposes
+						jGivenIlmCounts.incrementCount(new Pair<Integer,Integer>(targetIndex,sourceIndex),
 								new Pair<Integer,Integer>(l_k,m_k), delta);
-						ilmCounts.incrementCount(new Pair<Integer,Pair<Integer,Integer>>(i,new Pair<Integer,Integer>(l_k,m_k)),delta);
+						ilmCounts.incrementCount(new Pair<Integer,Pair<Integer,Integer>>(sourceIndex,new Pair<Integer,Integer>(l_k,m_k)),delta);
 						
 						
-						j++;
+						targetIndex++;
 					}
 					
 					
-					i++;
+					sourceIndex++;
 				}			
 			}
 			
