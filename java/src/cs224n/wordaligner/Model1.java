@@ -9,13 +9,11 @@ public class Model1 implements WordAligner {
 	private CounterMap<String, String> efCounter;
     private Counter<String> eCounter;
     private CounterMap<String, String> feProb;
-    private ArrayList<String> pairs;
     
     private final double THRESHOLD = 0.05; 
     
 	public Model1() {
     	feProb = new CounterMap<String,String>();
-    	pairs = new ArrayList<String>();
 	}
 	
 	public Alignment align(SentencePair sentencePair) {
@@ -23,6 +21,11 @@ public class Model1 implements WordAligner {
 		
 		List<String> sourceSentence = sentencePair.getSourceWords();
 		List<String> targetSentence = sentencePair.getTargetWords();
+		
+		// Since it seems like these are references, adding NULL_WORD 
+		// once causes it to be added permanently in future reads.
+		if(!sourceSentence.get(0).equals(NULL_WORD))
+			sourceSentence.add(0,NULL_WORD);
 		
 		double prob = 0;
 		double maxProb = 0;
@@ -46,12 +49,13 @@ public class Model1 implements WordAligner {
 			targetIndex++;
 			sourceIndex = 0;
 		}
-		
 		return alignment;
 	}
 
 	public void train(List<SentencePair> trainingData) {
 	
+		long startTime = System.currentTimeMillis();
+		
 		// Initialize uniform probabilities
 		for (SentencePair pair : trainingData) {
 			List<String> eWords = pair.getTargetWords();
@@ -60,8 +64,7 @@ public class Model1 implements WordAligner {
 			
 			for (String f : fWords) {
 				for (String e : eWords) {
-					pairs.add(f+" "+e);
-					feProb.setCount(f,e,0.5);
+					feProb.setCount(f,e,0.2);
 				}
 			}
 		}
@@ -72,53 +75,54 @@ public class Model1 implements WordAligner {
 		boolean converge = false;
 		double sum = 0;
 		
-		while (!converge) {
+		// For t = 1 ... T
+		for (int i = 0; i < 10; i++) {//while (!converge) {
 			oldlikelihood = likelihood;
 			likelihood = 0;
 			
+			// Set all counts c(...) = 0
 			efCounter = new CounterMap<String,String>();
 			eCounter = new Counter<String>();
 			
-			for (SentencePair pair : trainingData) { // For k = 1 ... n
+			// For k = 1 ... n
+			for (SentencePair pair : trainingData) {
 				List<String> eWords = pair.getTargetWords();
 			    List<String> fWords = pair.getSourceWords();
 			    
-			    for (String f : fWords) { // For i = 1 ... mk			    	
+			    // For i = 1 ... m
+			    for (String f : fWords) {			    	
 			    	sum = 0;
+			    	
+			    	// For j = 0 ... lk
 			    	for (String e : eWords) {
 			    		sum+=feProb.getCount(f,e);
 			    	}
-			    	for (String e : eWords) { // For j = 0 ... lk
+			    	for (String e : eWords) {
 			    		delta = feProb.getCount(f,e)/sum;
 			    		eCounter.incrementCount(e, delta);
 			    		efCounter.incrementCount(e,f, delta);
-//			    		feProb.setCount(f,e,((double)efCounter.getCount(e,f)/eCounter.getCount(e)));
-//			    		likelihood+=feProb.getCount(f,e);
 			    	}
 				}
 			}
 			
-			for (String p : pairs) {
-				String[]fe = p.split(" ");
-	    		feProb.setCount(fe[0],fe[1],((double)efCounter.getCount(fe[1],fe[0])/eCounter.getCount(fe[1])));
-	    		likelihood+=feProb.getCount(fe[0],fe[1]);
+			// Set t
+			for (SentencePair pair : trainingData) {
+				List<String> eWords = pair.getTargetWords();
+			    List<String> fWords = pair.getSourceWords();
+			    
+			    for (String f : fWords) { 			    	
+			    	for (String e : eWords) {
+			    		feProb.setCount(f,e,((double)efCounter.getCount(e,f)/eCounter.getCount(e)));
+			    	}
+			    }
 			}
-//			
-//			for (SentencePair pair : trainingData) { // For k = 1 ... n
-//				List<String> eWords = pair.getTargetWords();
-//			    List<String> fWords = pair.getSourceWords();
-//			    
-//			    for (String f : fWords) { // For i = 1 ... mk			    	
-//			    	for (String e : eWords) { // For j = 0 ... lk
-//			    		feProb.setCount(f,e,((double)efCounter.getCount(e,f)/eCounter.getCount(e)));
-//			    		likelihood+=feProb.getCount(f,e);
-//			    		System.out.println(f+","+e+": "+feProb.getCount(f,e));
-//			    	}
-//			    }
-//			}
-			System.out.println(Math.abs(oldlikelihood-likelihood));
-			if (Math.abs(oldlikelihood-likelihood) < THRESHOLD)
-				converge = true;
+			
+			
+//			System.out.println(Math.abs(oldlikelihood-likelihood));
+//			if (Math.abs(oldlikelihood-likelihood) < THRESHOLD)
+//				converge = true;
 		}
+		long endTime = System.currentTimeMillis();
+		System.out.println("Execution Time: " + ((endTime-startTime)/1000.0)+"s");
 	}
 }
