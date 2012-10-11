@@ -113,7 +113,7 @@ public class Model2 implements WordAligner {
 		boolean isConverged = false;
 		double sum = 0;
 		int iter = 0;
-		while (!isConverged) {
+		while (!isConverged && iter < 10) {
 			iter++;
 			oldlikelihood = likelihood;
 			likelihood = 0;
